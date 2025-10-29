@@ -1,0 +1,14 @@
+[project]
+name = "Kinetic-dash"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.11"
+dependencies = [
+    "cantools>=40.7.1",
+    "numpy>=2.3.4",
+    "openpyxl>=3.1.5",
+    "pandas>=2.3.3",
+    "plotly>=6.3.1",
+    "scikit-learn>=1.7.2",
+    "streamlit>=1.50.0",
+]
