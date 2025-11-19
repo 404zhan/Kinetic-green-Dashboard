@@ -152,6 +152,13 @@ def parse_can_asc(file_content):
 
 
 def parse_can_blf(file_content):
+    try:
+        import can
+        from can import BLFReader
+        BLF_AVAILABLE = True
+    except Exception:
+        BLF_AVAILABLE = False
+
     if not BLF_AVAILABLE:
         st.warning("BLF parsing is not supported in this environment.")
         return None
