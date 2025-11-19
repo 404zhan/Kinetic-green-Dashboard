@@ -152,29 +152,20 @@ def parse_can_asc(file_content):
 
 
 def parse_can_blf(file_content):
-    """Parse CAN log in BLF (Binary Logging Format) using cantools"""
+    if not BLF_AVAILABLE:
+        st.warning("BLF parsing is not supported in this environment.")
+        return None
+
     try:
-        import can
-        from can import BLFReader
-        
-        data = []
         blf_file = BytesIO(file_content)
-        
+        data = []
         for msg in BLFReader(blf_file):
-            if hasattr(msg, 'timestamp') and hasattr(msg, 'arbitration_id') and hasattr(msg, 'data'):
-                data.append({
-                    'timestamp': msg.timestamp,
-                    'can_id': f"0x{msg.arbitration_id:X}",
-                    'data': ' '.join([f'{b:02X}' for b in msg.data])
-                })
-        
-        return pd.DataFrame(data) if data else None
-    except ImportError:
-        st.warning("BLF parsing requires python-can library. Attempting basic parsing...")
-        return None
+            data.append({...})
+        return pd.DataFrame(data)
     except Exception as e:
-        st.error(f"Error parsing BLF: {str(e)}")
+        st.error(f"BLF parsing failed: {e}")
         return None
+
 
 
 def decode_with_dbc(df, dbc_db):
