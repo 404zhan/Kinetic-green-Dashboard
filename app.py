@@ -438,97 +438,90 @@ if page == "📤 Upload Data":
                 elif file_format == "BLF (Binary)":
                     raw_df = parse_can_blf(uploaded_file.read())
                 elif uploaded_file.name.endswith(".parquet"):
-                    raw_df = pd.read_parquet(uploaded_file)
-                    df = raw_df.copy()
-                    # Normalize column names
-                    cols = {c.lower().strip(): c for c in df.columns}
-                    # --- 1. AUTO-DETECT TIMESTAMP COLUMN ---
-                    timestamp_col = None
-                    # Heuristics:
-                    # - numeric increasing values
-                    # - datetime convertible values
-                    # - column name hints
-                    for col in df.columns:
-                        lname = col.lower()
-                        series = df[col]
-                        # Name hints
-                        if any(key in lname for key in ["time", "ts", "date"]):
-                            timestamp_col = col
-                            break
-                        # Try numeric timestamp (monotonic-ish)
-                        if pd.api.types.is_numeric_dtype(series):
-                            if series.is_monotonic_increasing or series.is_monotonic:
-                                timestamp_col = col
-                                break
-                        # Try datetime-like
-                        try:
-                            converted = pd.to_datetime(series)
-                            if converted.notna().mean() > 0.7:  # 70% parse success
-                                timestamp_col = col
-                                break
-                        except:
-                            pass
-                    if timestamp_col is None:
-                        st.error("❌ Could not auto-detect timestamp column in Parquet file.")
-                        st.write("Columns:", list(df.columns))
-                        raw_df = None
-                    else:
-                        df.rename(columns={timestamp_col: "timestamp"}, inplace=True)
-                    # --- 2. AUTO-DETECT CAN ID COLUMN ---
-                    can_id_col = None
-                    for col in df.columns:
-                        lname = col.lower()
-                        series = df[col]
+                    try:
+                        df = pd.read_parquet(uploaded_file)
+                        st.success("Parquet file loaded successfully!")
+                        st.dataframe(df.head(100), height=200)
 
-                        # Name hints
-                        if "id" in lname or "arb" in lname:
-                            can_id_col = col
-                            break
+                        # ----------------------------------------------------------
+                        # 1️⃣ Detect if the parquet is already decoded (DBC applied)
+                        # ----------------------------------------------------------
+                        decoded_keywords = [
+                            "rpm", "voltage", "current", "soc", "speed",
+                            "temp", "motor", "battery", "torque", "controller"
+                        ]
 
-                        # Content pattern: numeric IDs or hex IDs
-                        if series.dtype == object:
-                            sample = series.dropna().astype(str).head(20)
-                            if sample.str.match(r"^(0x)?[0-9a-fA-F]+$").mean() > 0.5:
-                                can_id_col = col
-                                break
+                        is_decoded = any(
+                            any(key in col.lower() for key in decoded_keywords)
+                            for col in df.columns
+                        )
 
-                        if pd.api.types.is_integer_dtype(series):
-                            can_id_col = col
-                            break
+                        if is_decoded:
+                            st.success("Detected decoded Parquet (signals already extracted).")
+                            st.session_state.uploaded_data = df
+                            st.session_state.processed_data = df
+                            # continue script normally
+                        else:
+                            # ----------------------------------------------------------
+                            # 2️⃣ RAW CAN parquet → Auto-detect possible schema
+                            # ----------------------------------------------------------
+                            column_map = {
+                                "timestamp": ["timestamp", "time", "ts", "date"],
+                                "can_id": ["can_id", "arbitration_id", "id", "frame_id"],
+                                "data": ["data", "payload", "raw", "bytes"]
+                            }
 
-                    if can_id_col is None:
-                        st.error("❌ Could not auto-detect CAN ID column in Parquet file.")
-                        st.write("Columns:", list(df.columns))
-                        raw_df = None
-                    else:
-                        df.rename(columns={can_id_col: "can_id"}, inplace=True)
 
-                    # --- 3. AUTO-DETECT DATA PAYLOAD COLUMN ---
-                    data_col = None
-                    for col in df.columns:
-                        lname = col.lower()
-                        series = df[col]
+                            def find_column(name):
+                                for pattern in column_map[name]:
+                                    matches = [c for c in df.columns if pattern.lower() in c.lower()]
+                                    if matches:
+                                        return matches[0]
+                                return None
 
-                        # Name hints
-                        if any(key in lname for key in ["data", "msg", "payload", "raw"]):
-                            data_col = col
-                            break
 
-                        # Content hints: hex-like byte strings
-                        if series.dtype == object:
-                            sample = series.dropna().astype(str).head(20)
-                            if sample.str.match(r"^([0-9a-fA-F]{2}\s*){1,8}$").mean() > 0.5:
-                                data_col = col
-                                break
+                            ts_col = find_column("timestamp")
+                            id_col = find_column("can_id")
+                            data_col = find_column("data")
 
-                    if data_col is None:
-                        st.error("❌ Could not auto-detect CAN data payload column in Parquet file.")
-                        st.write("Columns:", list(df.columns))
-                        raw_df = None
-                    else:
-                        df.rename(columns={data_col: "data"}, inplace=True)
+                            if not ts_col or not id_col or not data_col:
+                                st.error("❌ Unable to auto-detect columns in Parquet.")
+                                st.write("Expected something like timestamp / id / data.")
+                            else:
+                                df = df.rename(columns={
+                                    ts_col: "timestamp",
+                                    id_col: "can_id",
+                                    data_col: "data"
+                                })
 
-                    raw_df = df
+                                # Ensure correct formats
+                                try:
+                                    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+                                except:
+                                    pass
+
+                                df["can_id"] = df["can_id"].astype(str)
+
+                                # Decode hex string / bytes → hex string
+                                if df["data"].dtype == "object":
+                                    df["data"] = df["data"].apply(
+                                        lambda x: x.hex() if isinstance(x, (bytes, bytearray)) else str(x)
+                                    )
+
+                                st.session_state.uploaded_data = df
+
+                                # If a DBC is loaded, decode
+                                if st.session_state.dbc_database:
+                                    st.info("Decoding CAN frames using uploaded DBC…")
+                                    decoded_df = decode_with_dbc(df, st.session_state.dbc_database)
+                                    st.session_state.processed_data = decoded_df
+                                    st.success("Decoded successfully!")
+                                else:
+                                    st.session_state.processed_data = df
+                                    st.warning("Parquet loaded as RAW CAN; upload DBC to decode.")
+
+                    except Exception as e:
+                        st.error(f"Error reading Parquet: {str(e)}")
 
                 elif uploaded_file.name.endswith(".trc"):
                     raw_df = parse_trc(uploaded_file)
