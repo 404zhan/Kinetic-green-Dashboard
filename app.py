@@ -1,3 +1,22 @@
+import os, traceback, streamlit as st
+os.environ["RICH_TRACEBACK"] = "true"
+
+def _debug_startup():
+    try:
+        pass
+    except Exception as e:
+        st.error("Startup Error:")
+        st.code(traceback.format_exc())
+        raise
+_debug_startup()
+
+try:
+    import can
+    from can import BLFReader
+    CAN_BL_SUPPORTED = True
+except Exception:
+    CAN_BL_SUPPORTED = False
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -158,6 +177,10 @@ def parse_can_blf(file_content):
         BLF_AVAILABLE = True
     except Exception:
         BLF_AVAILABLE = False
+
+    if not CAN_BL_SUPPORTED:
+        st.warning("BLF parsing is not supported here.")
+        return None
 
     if not BLF_AVAILABLE:
         st.warning("BLF parsing is not supported in this environment.")
