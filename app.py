@@ -167,13 +167,15 @@ def parse_can_blf(file_content):
         blf_file = BytesIO(file_content)
         data = []
         for msg in BLFReader(blf_file):
-            data.append({...})
+            data.append({
+                "timestamp": msg.timestamp,
+                "can_id": f"0x{msg.arbitration_id:X}",
+                "data": " ".join(f"{b:02X}" for b in msg.data)
+            })
         return pd.DataFrame(data)
     except Exception as e:
         st.error(f"BLF parsing failed: {e}")
         return None
-
-
 
 def decode_with_dbc(df, dbc_db):
     """Decode CAN messages using DBC database"""
