@@ -3,3 +3,6 @@ headless = true
 enableCORS = false
 enableXsrfProtection = false
 port = 8080
+
+[commands]
+run = "streamlit run app.py"
