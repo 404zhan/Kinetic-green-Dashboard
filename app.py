@@ -460,6 +460,7 @@ if page == "📤 Upload Data":
                             st.success("Detected decoded Parquet (signals already extracted).")
                             st.session_state.uploaded_data = df
                             st.session_state.processed_data = df
+                            raw_df = df
                             # continue script normally
                         else:
                             # ----------------------------------------------------------
@@ -470,8 +471,6 @@ if page == "📤 Upload Data":
                                 "can_id": ["can_id", "arbitration_id", "id", "frame_id"],
                                 "data": ["data", "payload", "raw", "bytes"]
                             }
-
-
                             def find_column(name):
                                 for pattern in column_map[name]:
                                     matches = [c for c in df.columns if pattern.lower() in c.lower()]
@@ -519,6 +518,7 @@ if page == "📤 Upload Data":
                                 else:
                                     st.session_state.processed_data = df
                                     st.warning("Parquet loaded as RAW CAN; upload DBC to decode.")
+                                raw_df = df
 
                     except Exception as e:
                         st.error(f"Error reading Parquet: {str(e)}")
