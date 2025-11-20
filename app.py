@@ -336,9 +336,13 @@ def clean_and_process_data(df, dbc_db=None):
                 df['datetime'] = base_time + pd.to_timedelta(df['timestamp'], unit='s')
         else:
             df['datetime'] = df['timestamp']
-    
+
+    if 'timestamp' not in df.columns:
+        st.error("No 'timestamp' column found in the uploaded file.")
+        return None
+
     df = df.dropna(subset=['timestamp'])
-    
+
     if 'can_id' in df.columns:
         df['can_id'] = df['can_id'].astype(str)
     
@@ -434,7 +438,98 @@ if page == "📤 Upload Data":
                 elif file_format == "BLF (Binary)":
                     raw_df = parse_can_blf(uploaded_file.read())
                 elif uploaded_file.name.endswith(".parquet"):
-                    raw_df = pd.read_parquet(uploaded_file, engine="fastparquet")
+                    raw_df = pd.read_parquet(uploaded_file)
+                    df = raw_df.copy()
+                    # Normalize column names
+                    cols = {c.lower().strip(): c for c in df.columns}
+                    # --- 1. AUTO-DETECT TIMESTAMP COLUMN ---
+                    timestamp_col = None
+                    # Heuristics:
+                    # - numeric increasing values
+                    # - datetime convertible values
+                    # - column name hints
+                    for col in df.columns:
+                        lname = col.lower()
+                        series = df[col]
+                        # Name hints
+                        if any(key in lname for key in ["time", "ts", "date"]):
+                            timestamp_col = col
+                            break
+                        # Try numeric timestamp (monotonic-ish)
+                        if pd.api.types.is_numeric_dtype(series):
+                            if series.is_monotonic_increasing or series.is_monotonic:
+                                timestamp_col = col
+                                break
+                        # Try datetime-like
+                        try:
+                            converted = pd.to_datetime(series)
+                            if converted.notna().mean() > 0.7:  # 70% parse success
+                                timestamp_col = col
+                                break
+                        except:
+                            pass
+                    if timestamp_col is None:
+                        st.error("❌ Could not auto-detect timestamp column in Parquet file.")
+                        st.write("Columns:", list(df.columns))
+                        raw_df = None
+                    else:
+                        df.rename(columns={timestamp_col: "timestamp"}, inplace=True)
+                    # --- 2. AUTO-DETECT CAN ID COLUMN ---
+                    can_id_col = None
+                    for col in df.columns:
+                        lname = col.lower()
+                        series = df[col]
+
+                        # Name hints
+                        if "id" in lname or "arb" in lname:
+                            can_id_col = col
+                            break
+
+                        # Content pattern: numeric IDs or hex IDs
+                        if series.dtype == object:
+                            sample = series.dropna().astype(str).head(20)
+                            if sample.str.match(r"^(0x)?[0-9a-fA-F]+$").mean() > 0.5:
+                                can_id_col = col
+                                break
+
+                        if pd.api.types.is_integer_dtype(series):
+                            can_id_col = col
+                            break
+
+                    if can_id_col is None:
+                        st.error("❌ Could not auto-detect CAN ID column in Parquet file.")
+                        st.write("Columns:", list(df.columns))
+                        raw_df = None
+                    else:
+                        df.rename(columns={can_id_col: "can_id"}, inplace=True)
+
+                    # --- 3. AUTO-DETECT DATA PAYLOAD COLUMN ---
+                    data_col = None
+                    for col in df.columns:
+                        lname = col.lower()
+                        series = df[col]
+
+                        # Name hints
+                        if any(key in lname for key in ["data", "msg", "payload", "raw"]):
+                            data_col = col
+                            break
+
+                        # Content hints: hex-like byte strings
+                        if series.dtype == object:
+                            sample = series.dropna().astype(str).head(20)
+                            if sample.str.match(r"^([0-9a-fA-F]{2}\s*){1,8}$").mean() > 0.5:
+                                data_col = col
+                                break
+
+                    if data_col is None:
+                        st.error("❌ Could not auto-detect CAN data payload column in Parquet file.")
+                        st.write("Columns:", list(df.columns))
+                        raw_df = None
+                    else:
+                        df.rename(columns={data_col: "data"}, inplace=True)
+
+                    raw_df = df
+
                 elif uploaded_file.name.endswith(".trc"):
                     raw_df = parse_trc(uploaded_file)
                 elif file_format == "JSON":
