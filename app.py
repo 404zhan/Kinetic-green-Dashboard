@@ -434,7 +434,7 @@ if page == "📤 Upload Data":
                 elif file_format == "BLF (Binary)":
                     raw_df = parse_can_blf(uploaded_file.read())
                 elif uploaded_file.name.endswith(".parquet"):
-                    raw_df = pd.read_parquet(uploaded_file)
+                    raw_df = pd.read_parquet(uploaded_file, engine="fastparquet")
                 elif uploaded_file.name.endswith(".trc"):
                     raw_df = parse_trc(uploaded_file)
                 elif file_format == "JSON":

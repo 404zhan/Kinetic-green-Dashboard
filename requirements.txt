@@ -6,4 +6,5 @@ scikit-learn==1.5.2
 python-can==4.6.0
 cantools==40.7.1
 openpyxl==3.1.5
-pyarrow==17.0.0
+fastparquet==2024.5.0
+
